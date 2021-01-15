@@ -1,8 +1,8 @@
 /*
 * Hello world for SweRVolf
-* 
+*
 * Prints a fancy string and exits afterwards
-* 
+*
 */
 #define CONSOLE_ADDR 0x80001008
 #define HALT_ADDR    0x80001009
@@ -32,8 +32,7 @@ next:
 
 	/* Halt simulation */
 	li  a1,     HALT_ADDR
-	sw zero, 0(a1)
+	sb zero, 0(a1)
 str:
 	.section .data
 	.string "SweRV+FuseSoC rocks\n"
-

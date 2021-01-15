@@ -37,12 +37,12 @@ module swervolf_core_tb
 `endif
   ;
 
-   localparam RAM_SIZE     = 32'h10000;
+   localparam RAM_SIZE     = 32'h100000;
 
 `ifndef VERILATOR
    reg 	 clk = 1'b0;
    reg 	 rst = 1'b1;
-   always #20 clk <= !clk;
+   always #10 clk <= !clk;
    initial #100 rst <= 1'b0;
    wire  o_gpio;
    wire i_jtag_tck = 1'b0;
@@ -74,9 +74,20 @@ module swervolf_core_tb
 	 $display("Loading ROM contents from %0s", rom_init_file);
 	 $readmemh(rom_init_file, swervolf.bootrom.ram.mem);
       end else if (!(|bootrom_file))
-	//Jump to address 0 if no bootloader is selected
-	swervolf.bootrom.ram.mem[0] = 64'h0000000000000067;
+	/*
+	 Set mrac to 0xAAAA0000 and jump to address 0
+	 if no bootloader is selected
+	 0:   aaaa02b7                lui     t0,0xaaaa0
+	 4:   7c029073                csrw    0x7c0,t0
+	 8:   00000067                jr      zero
+
+	 */
+	swervolf.bootrom.ram.mem[0] = 64'h7c029073aaaa02b7;
+	swervolf.bootrom.ram.mem[1] = 64'h0000000000000067;
    end
+
+   wire [63:0] gpio_out;
+   assign o_gpio = gpio_out[0];
 
    wire [5:0]  ram_awid;
    wire [31:0] ram_awaddr;
@@ -186,7 +197,8 @@ module swervolf_core_tb
       .dmi_hard_reset (dmi_hard_reset)); 
 
    swervolf_core
-     #(.bootrom_file (bootrom_file))
+     #(.bootrom_file (bootrom_file),
+       .clk_freq_hz (32'd50_000_000))
    swervolf
      (.clk  (clk),
       .rstn (!rst),
@@ -196,6 +208,10 @@ module swervolf_core_tb
       .dmi_reg_en          (dmi_reg_en),
       .dmi_reg_wr_en       (dmi_reg_wr_en),
       .dmi_hard_reset      (dmi_hard_reset),
+      .o_flash_sclk        (),
+      .o_flash_cs_n        (),
+      .o_flash_mosi        (),
+      .i_flash_miso        (1'b0),
       .i_uart_rx           (1'b1),
       .o_uart_tx           (o_uart_tx),
       .o_ram_awid          (ram_awid),
@@ -239,6 +255,7 @@ module swervolf_core_tb
       .o_ram_rready        (ram_rready),
       .i_ram_init_done     (1'b1),
       .i_ram_init_error    (1'b0),
-      .o_gpio (o_gpio));
+      .i_gpio              (64'd0),
+      .o_gpio              (gpio_out));
 
 endmodule

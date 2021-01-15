@@ -23,7 +23,7 @@
 
 `default_nettype none
 module swervolf_nexys_a7
-  #(parameter bootrom_file = "blinky.vh")
+  #(parameter bootrom_file = "bootloader.vh")
    (input wire 	       clk,
     input wire 	       rstn,
     output wire [12:0] ddram_a,
@@ -34,16 +34,25 @@ module swervolf_nexys_a7
     output wire        ddram_cs_n,
     output wire [1:0]  ddram_dm,
     inout wire [15:0]  ddram_dq,
-    output wire [1:0]  ddram_dqs_p,
-    output wire [1:0]  ddram_dqs_n,
+    inout wire [1:0]  ddram_dqs_p,
+    inout wire [1:0]  ddram_dqs_n,
     output wire        ddram_clk_p,
     output wire        ddram_clk_n,
     output wire        ddram_cke,
     output wire        ddram_odt,
-    input wire 	       sw0,
+    output wire        o_flash_cs_n,
+    output wire        o_flash_mosi,
+    input wire 	       i_flash_miso,
     input wire 	       i_uart_rx,
     output wire        o_uart_tx,
-    output wire        led0);
+    input wire [15:0]  i_sw,
+    output reg [15:0]  o_led);
+
+   wire [63:0] 	       gpio_out;
+   reg [15:0] 	       led_int_r;
+
+   reg [15:0] 	       sw_r;
+   reg [15:0] 	       sw_2r;
 
    wire 	       cpu_tx,litedram_tx;
 
@@ -72,23 +81,22 @@ module swervolf_nexys_a7
    assign cpu.w_user = 1'b0;
    assign cpu.b_user = 1'b0;
    assign cpu.r_user = 1'b0;
+   assign mem.b_user = 1'b0;
+   assign mem.r_user = 1'b0;
 
-   axi_cdc
+   axi_cdc_intf
      #(.AXI_USER_WIDTH (1),
+       .AXI_ADDR_WIDTH (32),
+       .AXI_DATA_WIDTH (64),
        .AXI_ID_WIDTH   (6))
    cdc
      (
-      .clk_slave_i   (clk_core),
-      .rst_slave_ni  (~rst_core),
-      .axi_slave     (cpu),
-      .isolate_slave_i    (1'b0),
-      .test_cgbypass_i    (1'b0),
-
-      .clk_master_i   (user_clk),
-      .rst_master_ni  (~user_rst),
-      .axi_master     (mem),
-      .isolate_master_i     (1'b0),
-      .clock_down_master_i  (1'b0));
+      .src_clk_i  (clk_core),
+      .src_rst_ni (~rst_core),
+      .src        (cpu),
+      .dst_clk_i  (user_clk),
+      .dst_rst_ni (~user_rst),
+      .dst        (mem));
 
    litedram_top
      #(.ID_WIDTH (6))
@@ -153,6 +161,24 @@ module swervolf_nexys_a7
    wire [31:0] dmi_reg_rdata;
    wire        dmi_hard_reset;
 
+   wire        flash_sclk;
+
+   STARTUPE2 STARTUPE2
+     (
+      .CFGCLK    (),
+      .CFGMCLK   (),
+      .EOS       (),
+      .PREQ      (),
+      .CLK       (1'b0),
+      .GSR       (1'b0),
+      .GTS       (1'b0),
+      .KEYCLEARB (1'b1),
+      .PACK      (1'b0),
+      .USRCCLKO  (flash_sclk),
+      .USRCCLKTS (1'b0),
+      .USRDONEO  (1'b1),
+      .USRDONETS (1'b0));
+
    bscan_tap tap
      (.clk            (clk_core),
       .rst            (rst_core),
@@ -169,7 +195,8 @@ module swervolf_nexys_a7
       .version        (4'd1));
 
    swervolf_core
-     #(.bootrom_file (bootrom_file))
+     #(.bootrom_file (bootrom_file),
+       .clk_freq_hz  (32'd50_000_000))
    swervolf
      (.clk  (clk_core),
       .rstn (~rst_core),
@@ -179,6 +206,10 @@ module swervolf_nexys_a7
       .dmi_reg_en     (dmi_reg_en   ),
       .dmi_reg_wr_en  (dmi_reg_wr_en),
       .dmi_hard_reset (dmi_hard_reset),
+      .o_flash_sclk   (flash_sclk),
+      .o_flash_cs_n   (o_flash_cs_n),
+      .o_flash_mosi   (o_flash_mosi),
+      .i_flash_miso   (i_flash_miso),
       .i_uart_rx      (i_uart_rx),
       .o_uart_tx      (cpu_tx),
       .o_ram_awid     (cpu.aw_id),
@@ -222,8 +253,16 @@ module swervolf_nexys_a7
       .o_ram_rready   (cpu.r_ready),
       .i_ram_init_done  (litedram_init_done),
       .i_ram_init_error (litedram_init_error),
-      .o_gpio (led0));
+      .i_gpio           ({32'd0,sw_2r,16'd0}),
+      .o_gpio           (gpio_out));
 
-   assign o_uart_tx = sw0 ? litedram_tx : cpu_tx;
+   always @(posedge clk_core) begin
+      o_led <= led_int_r;
+      led_int_r <= gpio_out[15:0];
+      sw_r <= i_sw;
+      sw_2r <= sw_r;
+   end
+
+   assign o_uart_tx = sw_2r[0] ? litedram_tx : cpu_tx;
 
 endmodule

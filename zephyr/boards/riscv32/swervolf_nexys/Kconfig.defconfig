@@ -1,6 +1,0 @@
-if BOARD_SWERVOLF_NEXYS
-
-config BOARD
-	default "swervolf_nexys"
-
-endif
