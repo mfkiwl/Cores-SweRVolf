@@ -1,9 +1,11 @@
 SweRVolf
 ========
 
-SweRVolf is a [FuseSoC](https://github.com/olofk/fusesoc)-based SoC for the [SweRV](https://github.com/chipsalliance/Cores-SweRV) RISC-V core.
+[![LibreCores](https://www.librecores.org/olofk/swervolf/badge.svg?style=flat)](https://www.librecores.org/olofk/swervolf)
 
-This can be used to run the [RISC-V compliance tests](https://github.com/riscv/riscv-compliance), [Zephyr OS](https://www.zephyrproject.org) or other software in simulators or on FPGA boards. Focus is on portability, extendability and ease of use; to allow SweRV users to quickly get software running, modify the SoC to their needs or port it to new target devices.
+SweRVolf is a [FuseSoC](https://github.com/olofk/fusesoc)-based reference platform for the SweRV family of RISC-V cores. Currently, [SweRV EH1](https://github.com/chipsalliance/Cores-SweRV) and [SweRV EL2](https://github.com/chipsalliance/Cores-SweRV-EL2) are supported. See [CPU configuration](#cpu-configuration) to learn how to switch between them.
+
+This can be used to run the [RISC-V compliance tests](https://github.com/riscv/riscv-compliance), [Zephyr OS](https://www.zephyrproject.org), [TockOS](https://github.com/tock/tock/tree/master/boards/swervolf) or other software in simulators or on FPGA boards. Focus is on portability, extendability and ease of use; to allow SweRV users to quickly get software running, modify the SoC to their needs or port it to new target devices.
 
 # Structure
 
@@ -55,7 +57,8 @@ The system controller contains common system functionality such as keeping regis
 | 0x0A     | init_status | Bit 0 = RAM initialization complete. Bit 1 = RAM initialization reported errors
 | 0x0B     | sw_irq                | Software-controlled external interrupts
 | 0x0C-0x0F | nmi_vec | Interrupt vector for NMI |
-| 0x10-0x17 | gpio | 64 readable and writable GPIO bits |
+| 0x10-0x13 | gpio0 | 32 readable and writable GPIO bits |
+| 0x18-0x1B | gpio1 | 32 readable and writable GPIO bits |
 | 0x20-0x27 | mtime | mtime from RISC-V privilege spec |
 | 0x28-0x2f | mtimecmp |mtimecmp from RISC-V privilege spec |
 | 0x30-0x33 | irq_timer_cnt | IRQ timer counter |
@@ -140,11 +143,48 @@ During boot up, the two topmost switches (sw14, sw15) control the boot mode.
 | sw15 | sw14 | Boot mode                  |
 | ---- | ---- | -------------------------- |
 |  off |  off | Boot from SPI Flash        |
-|  off |   on | Boot from address 0 in RAM |
-|   on |  off | Boot from serial           |
+|  off |   on | Boot from serial           |
+|   on |  off | Boot from address 0 in RAM |
 |   on |   on | Undefined                  |
 
 *Note: Switch 0 has a dual purpose and selects whether to output serial communication from the SoC (0=off) or from the embedded self-test program in the DDR2 controller (1=on).*
+
+#### micro USB
+
+UART and JTAG communication is tunneled through the microUSB port on the board and will appear as `/dev/ttyUSB0`, `/dev/ttyUSB1` or similar depending on OS configuration. A terminal emulator can be used to connect to the UART (e.g. by running `screen /dev/ttyUSB0 115200`) and OpenOCD can connect to the JTAG port to program the FPGA or connect the debug proxy. The [debugging](#debugging) chapter goes into more detail on how to connect a debugger.
+
+#### SPI Flash
+
+An SPI controller is connected to the on-board SPI Flash. This can be used for storing data such as program to be loaded into memory during boot. The [SPI uImage loader](#spi-uimage-loader) chapter goes into more detail on how to prepare, write and boot a program stored in SPI Flash
+
+## SweRVolf Basys 3
+
+SweRVolf Basys 3 is a version of the SweRVolf SoC created for the Digilent Basys 3 board. It uses 64kB on-chip memory for RAM, has GPIO connected to LEDs and switches, supports booting from SPI Flash and uses the microUSB port for UART and JTAG communication. The default bootloader for the SweRVolf Basys 3 target will attempt to load a program stored in SPI Flash by default.
+
+![](swervolf_basys3.png)
+
+*SwerVolf Basys 3 target*
+
+### I/O
+
+The active on-board I/O consists of LEDs, switches and the microUSB connector for UART, JTAG and power.
+
+#### LEDs
+
+16 LEDs are controlled by memory-mapped GPIO at address 0x80001010-0x80001011
+
+#### Switches
+
+16 Switches are mapped GPIO addresses at 0x80001012-0x80001013
+
+During boot up, the two topmost switches (sw14, sw15) control the boot mode.
+
+| sw15 | sw14 | Boot mode                  |
+| ---- | ---- | -------------------------- |
+|  off |  off | Boot from SPI Flash        |
+|  off |   on | Boot from serial           |
+|   on |  off | Boot from address 0 in RAM |
+|   on |   on | Undefined                  |
 
 #### micro USB
 
@@ -162,7 +202,7 @@ Install [verilator](https://www.veripool.org/wiki/verilator)
 
 Create an empty directory, e.g. named swervolf, to use as the root of the project. This directory will from now on be called `$WORKSPACE`. All further commands will be run from `$WORKSPACE` unless otherwise stated. After entering the workspace directory, run `export WORKSPACE=$(pwd)` to set the $WORKSPACE shell variable.
 
-1. Make sure you have [FuseSoC](https://github.com/olofk/fusesoc) installed or install it with `pip install fusesoc`
+1. Make sure you have [FuseSoC](https://github.com/olofk/fusesoc) version 1.12 or newer installed or install it with `pip install fusesoc`
 2. Add the FuseSoC base library to the workspace with `fusesoc library add fusesoc-cores https://github.com/fusesoc/fusesoc-cores`
 3. Add the swervolf library with `fusesoc library add swervolf https://github.com/chipsalliance/Cores-SweRVolf`
 4. Make sure you have verilator installed to run the simulation. **Note** This requires at least version 3.918. The version that is shipped with Ubuntu 18.04 will NOT work
@@ -235,7 +275,7 @@ Another example to run is the Zephyr philosophers demo.
         ├──fusesoc_libraries
         └──riscv-compliance
 
-3. Enter the riscv-compliance directory and run `make TARGETDIR=$SWERVOLF_ROOT/riscv-target RISCV_TARGET=swerv RISCV_DEVICE=rv32i RISCV_ISA=rv32i TARGET_SIM=$WORKSPACE/build/swervolf_0.7.3/sim-verilator/Vswervolf_core_tb`
+3. Enter the riscv-compliance directory and run `make TARGETDIR=$SWERVOLF_ROOT/riscv-target RISCV_TARGET=swerv RISCV_DEVICE=rv32i RISCV_ISA=rv32i TARGET_SIM=$WORKSPACE/build/swervolf_0.7.4/sim-verilator/Vswervolf_core_tb`
 
 *Note: Other test suites can be run by replacing RISCV_ISA=rv32imc with rv32im or rv32i*
 
@@ -439,3 +479,7 @@ The final step is to prepare the bootloader for SweRVolf which will be responsib
 ### Serial boot
 
 In serial boot mode, the UART waits for a program in Intel Hex format to be sent to the UART. Upon completion, the program will be launched.
+
+## CPU configuration
+
+SweRVolf currently supports the SweRV EH1 and EL2 cores. For all targets SweRV EH1 is used by default unless there are hardware limitations (e.g. FPGA size) that only allows using SweRV EL2. All targets can optionally use SweRV EL2 by passing  `--flag=cpu_el2` as a run option to FuseSoC, e.g. `fusesoc run --target=sim --flag=cpu_el2 swervolf` will run the default simulation example using SweRV EL2. Also note that the max frequency of the processors can differ. E.g. on the Nexys A7 board SweRV EH1 will run at 50MHz while SweRV EL2 runs at 25MHz. The `clk_freq_hz` register in the system controller will always show the correct value. The bootloader and Zephyr board support is also set up to automatically adapt timer and UART speeds to the runtime-detected clock speed.

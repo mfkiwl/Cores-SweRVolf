@@ -16,80 +16,33 @@
 //********************************************************************************
 // $Id$
 //
-// Function: Verilog testbench for SweRVolf
+// Function: SweRVolf toplevel for Nexys A7 board
 // Comments:
 //
 //********************************************************************************
 
 `default_nettype none
-module swervolf_core_tb
-  #(parameter bootrom_file  = "")
-`ifdef VERILATOR
-  (input wire clk,
-   input wire 	      rst,
-   input wire 	      i_jtag_tck,
-   input wire 	      i_jtag_tms,
-   input wire 	      i_jtag_tdi,
-   input wire 	      i_jtag_trst_n,
-   output wire 	      o_jtag_tdo,
-   output wire 	      o_uart_tx,
-   input wire [31:0]  i_gpio,
-   output wire [15:0] o_gpio)
-`endif
-  ;
+module swervolf_basys3
+  #(parameter bootrom_file = "bootloader.vh")
+   (input wire 	       clk,
+    output wire        o_flash_cs_n,
+    output wire        o_flash_mosi,
+    input wire 	       i_flash_miso,
+    input wire 	       i_uart_rx,
+    output wire        o_uart_tx,
+    input wire [15:0]  i_sw,
+    output reg [15:0]  o_led);
 
-   localparam RAM_SIZE     = 32'h100000;
+   wire [63:0] 	       gpio_out;
+   reg [15:0] 	       led_int_r;
 
-`ifndef VERILATOR
-   reg 	 clk = 1'b0;
-   reg 	 rst = 1'b1;
-   always #10 clk <= !clk;
-   initial #100 rst <= 1'b0;
-   wire [31:0] i_gpio;
-   wire [15:0] o_gpio;
-   wire i_jtag_tck = 1'b0;
-   wire i_jtag_tms = 1'b0;
-   wire i_jtag_tdi = 1'b0;
-   wire i_jtag_trst_n = 1'b0;
-   wire o_jtag_tdo;
-   wire  o_uart_tx;
+   reg [15:0] 	       sw_r;
+   reg [15:0] 	       sw_2r;
 
-   uart_decoder #(115200) uart_decoder (o_uart_tx);
+   localparam RAM_SIZE     = 32'h10000;
 
-`endif
-
-   reg [1023:0] ram_init_file;
-
-   initial begin
-      if (|$test$plusargs("jtag_vpi_enable"))
-	$display("JTAG VPI enabled. Not loading RAM");
-      else if ($value$plusargs("ram_init_file=%s", ram_init_file)) begin
-	 $display("Loading RAM contents from %0s", ram_init_file);
-	 $readmemh(ram_init_file, ram.ram.mem);
-      end
-   end
-
-   reg [1023:0] rom_init_file;
-
-   initial begin
-      if ($value$plusargs("rom_init_file=%s", rom_init_file)) begin
-	 $display("Loading ROM contents from %0s", rom_init_file);
-	 $readmemh(rom_init_file, swervolf.bootrom.ram.mem);
-      end else if (!(|bootrom_file))
-	/*
-	 Set mrac to 0xAAAA0000 and jump to address 0
-	 if no bootloader is selected
-	 0:   aaaa02b7                lui     t0,0xaaaa0
-	 4:   7c029073                csrw    0x7c0,t0
-	 8:   00000067                jr      zero
-
-	 */
-	swervolf.bootrom.ram.mem[0] = 64'h7c029073aaaa02b7;
-	swervolf.bootrom.ram.mem[1] = 64'h0000000000000067;
-   end
-
-   wire [63:0] gpio_out;
-   assign o_gpio = gpio_out[15:0];
+   wire 	 clk_core;
+   wire 	 rst_core;
 
    wire [5:0]  ram_awid;
    wire [31:0] ram_awaddr;
@@ -137,14 +90,22 @@ module swervolf_core_tb
    wire [31:0] dmi_reg_wdata;
    wire [31:0] dmi_reg_rdata;
    wire        dmi_hard_reset;
+
+   clk_gen_basys3
+   clk_gen
+     (.i_clk (clk),
+      .i_rst (1'b0),
+      .o_clk_core (clk_core),
+      .o_rst_core (rst_core));
+
    
-   axi_mem_wrapper
-     #(.ID_WIDTH  (`RV_LSU_BUS_TAG+2),
+   axi_mem
+     #(.ID_WIDTH  (`RV_LSU_BUS_TAG+3),
        .MEM_SIZE  (RAM_SIZE),
        .INIT_FILE (""))
    ram
-     (.clk       (clk),
-      .rst_n     (!rst),
+     (.clk       (clk_core),
+      .rst_n     (!rst_core),
       .i_awid    (ram_awid),
       .i_awaddr  (ram_awaddr),
       .i_awlen   (ram_awlen),
@@ -179,41 +140,56 @@ module swervolf_core_tb
       .o_rvalid (ram_rvalid),
       .i_rready (ram_rready));
 
-   dmi_wrapper dmi_wrapper
-     (.trst_n    (i_jtag_trst_n),
-      .tck       (i_jtag_tck),
-      .tms       (i_jtag_tms),
-      .tdi       (i_jtag_tdi),
-      .tdo       (o_jtag_tdo),
-      .tdoEnable (),
-      // Processor Signals
-      .core_rst_n     (!rst),
-      .core_clk       (clk),
+   wire        flash_sclk;
+
+   STARTUPE2 STARTUPE2
+     (
+      .CFGCLK    (),
+      .CFGMCLK   (),
+      .EOS       (),
+      .PREQ      (),
+      .CLK       (1'b0),
+      .GSR       (1'b0),
+      .GTS       (1'b0),
+      .KEYCLEARB (1'b1),
+      .PACK      (1'b0),
+      .USRCCLKO  (flash_sclk),
+      .USRCCLKTS (1'b0),
+      .USRDONEO  (1'b1),
+      .USRDONETS (1'b0));
+
+   bscan_tap tap
+     (.clk            (clk_core),
+      .rst            (rst_core),
       .jtag_id        (31'd0),
-      .rd_data        (dmi_reg_rdata),
-      .reg_wr_data    (dmi_reg_wdata),
-      .reg_wr_addr    (dmi_reg_addr),
-      .reg_en         (dmi_reg_en),
-      .reg_wr_en      (dmi_reg_wr_en),
-      .dmi_hard_reset (dmi_hard_reset)); 
+      .dmi_reg_wdata  (dmi_reg_wdata),
+      .dmi_reg_addr   (dmi_reg_addr),
+      .dmi_reg_wr_en  (dmi_reg_wr_en),
+      .dmi_reg_en     (dmi_reg_en),
+      .dmi_reg_rdata  (dmi_reg_rdata),
+      .dmi_hard_reset (dmi_hard_reset),
+      .rd_status      (2'd0),
+      .idle           (3'd0),
+      .dmi_stat       (2'd0),
+      .version        (4'd1));
 
    swervolf_core
      #(.bootrom_file (bootrom_file),
-       .clk_freq_hz (32'd50_000_000))
+       .clk_freq_hz  (32'd25_000_000))
    swervolf
-     (.clk  (clk),
-      .rstn (!rst),
+     (.clk  (clk_core),
+      .rstn (~rst_core),
       .dmi_reg_rdata       (dmi_reg_rdata),
       .dmi_reg_wdata       (dmi_reg_wdata),
       .dmi_reg_addr        (dmi_reg_addr),
       .dmi_reg_en          (dmi_reg_en),
       .dmi_reg_wr_en       (dmi_reg_wr_en),
       .dmi_hard_reset      (dmi_hard_reset),
-      .o_flash_sclk        (),
-      .o_flash_cs_n        (),
-      .o_flash_mosi        (),
-      .i_flash_miso        (1'b0),
-      .i_uart_rx           (1'b1),
+      .o_flash_sclk        (flash_sclk),
+      .o_flash_cs_n        (o_flash_cs_n),
+      .o_flash_mosi        (o_flash_mosi),
+      .i_flash_miso        (i_flash_miso),
+      .i_uart_rx           (i_uart_rx),
       .o_uart_tx           (o_uart_tx),
       .o_ram_awid          (ram_awid),
       .o_ram_awaddr        (ram_awaddr),
@@ -256,7 +232,14 @@ module swervolf_core_tb
       .o_ram_rready        (ram_rready),
       .i_ram_init_done     (1'b1),
       .i_ram_init_error    (1'b0),
-      .i_gpio              ({32'd0, i_gpio}),
+      .i_gpio              ({32'd0,sw_2r,16'd0}),
       .o_gpio              (gpio_out));
+
+   always @(posedge clk_core) begin
+      o_led <= led_int_r;
+      led_int_r <= gpio_out[15:0];
+      sw_r <= i_sw;
+      sw_2r <= sw_r;
+   end
 
 endmodule

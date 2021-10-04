@@ -16,18 +16,16 @@
 //********************************************************************************
 // $Id$
 //
-// Function: SweRVolf Nexys A7 clock generation
+// Function: SweRVolf Basys3 clock generation
 // Comments:
 //
 //********************************************************************************
 
-module clk_gen_nexys
-  (input  i_clk,
-   input      i_rst,
-   output     o_clk_core,
+module clk_gen_basys3
+  (input  wire i_clk,
+   input  wire     i_rst,
+   output wire     o_clk_core,
    output reg o_rst_core);
-
-   parameter CPU_TYPE = "";
 
    wire   clkfb;
    wire   locked;
@@ -37,7 +35,7 @@ module clk_gen_nexys
      #(.BANDWIDTH("OPTIMIZED"),
        .CLKFBOUT_MULT(16),
        .CLKIN1_PERIOD(10.0), //100MHz
-       .CLKOUT0_DIVIDE((CPU_TYPE == "EL2") ? 64 : 32),
+       .CLKOUT0_DIVIDE(64),
        .DIVCLK_DIVIDE(1),
        .STARTUP_WAIT("FALSE"))
    PLLE2_BASE_inst
