@@ -16,7 +16,7 @@
 //********************************************************************************
 // $Id$
 //
-// Function: Verilator testbench for SweRVolf
+// Function: Verilator testbench for VeeRwolf
 // Comments:
 //
 //********************************************************************************
@@ -27,7 +27,7 @@
 #include <jtagServer.h>
 
 #include "verilated_vcd_c.h"
-#include "Vswervolf_core_tb.h"
+#include "Vveerwolf_core_tb.h"
 
 using namespace std;
 
@@ -63,7 +63,7 @@ void uart_init(uart_context_t *context, uint32_t baud_rate) {
   context->state = 0;
 }
 
-void do_uart(uart_context_t *context, bool rx) {
+int do_uart(uart_context_t *context, bool rx) {
   if (context->state == 0) {
     if (rx)
       context->state++;
@@ -91,17 +91,18 @@ void do_uart(uart_context_t *context, bool rx) {
   else {
     if (main_time > context->last_update) {
       context->last_update += context->baud_t;
-      putchar(context->ch);
       context->state=1;
+      return 1;
     }
   }
+  return 0;
 }
 
 int main(int argc, char **argv, char **env)
 {
   Verilated::commandArgs(argc, argv);
   bool gpio0 = false;
-  Vswervolf_core_tb* top = new Vswervolf_core_tb;
+  Vveerwolf_core_tb* top = new Vveerwolf_core_tb;
 
   VerilatedVcdC * tfp = 0;
   const char *vcd = Verilated::commandArgsPlusMatch("vcd=");
@@ -146,7 +147,8 @@ int main(int argc, char **argv, char **env)
     top->eval();
     if (tfp)
       tfp->dump(main_time);
-    if (baud_rate) do_uart(&uart_context, top->o_uart_tx);
+    if (baud_rate && do_uart(&uart_context, top->o_uart_tx))
+      putchar(uart_context.ch);
     if (jtag && (main_time > 300)) {
       int ret = jtag->doJTAG(main_time/20, //doJtag requires t to only increment by one
 		   &top->i_jtag_tms,

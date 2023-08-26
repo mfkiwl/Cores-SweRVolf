@@ -21,7 +21,7 @@
 //
 //********************************************************************************
 
-module clk_gen_basys3
+module clk_gen_arty
   (input  wire i_clk,
    input  wire     i_rst,
    output wire     o_clk_core,
@@ -34,8 +34,8 @@ module clk_gen_basys3
    PLLE2_BASE
      #(.BANDWIDTH("OPTIMIZED"),
        .CLKFBOUT_MULT(16),
-       .CLKIN1_PERIOD(10.0), //100MHz
-       .CLKOUT0_DIVIDE(64),
+       .CLKIN1_PERIOD(10.0),   // 100 MHz
+       .CLKOUT0_DIVIDE(64),    //  25 MHz
        .DIVCLK_DIVIDE(1),
        .STARTUP_WAIT("FALSE"))
    PLLE2_BASE_inst

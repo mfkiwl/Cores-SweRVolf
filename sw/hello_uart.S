@@ -1,5 +1,5 @@
 /*
-* Hello world for SweRVolf
+* Hello world for VeeRwolf
 *
 * Prints a fancy string using the UART and exits afterwards
 *
@@ -79,6 +79,7 @@ put_byte:
 
 	sb	t0, 0(a0)
 	ret
-str:
+
 	.section .data
-	.string "SweRV+FuseSoC rocks\n"
+str:
+	.string "VeeR+FuseSoC rocks\n"
